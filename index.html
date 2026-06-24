@@ -638,7 +638,7 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:11px;heigh
           style="display:flex;align-items:center;justify-content:center;width:32px;height:32px;
           background:#34a853;border-radius:4px;text-decoration:none;font-size:16px;
           box-shadow:0 2px 6px rgba(0,0,0,.5);" title="ストリートビューで開く">👁</a>
-        <button id="map-btn-earth" onclick="downloadAnimationKmz()" title="Google Earth Pro用アニメーションKMZをダウンロード"
+        <button id="map-btn-earth" onclick="openKmlAuthModal('downloadAnimationKmz')" title="Google Earth Pro用アニメーションKMZをダウンロード"
           style="display:none;align-items:center;justify-content:center;width:32px;height:32px;
           background:#4a4a8a;border:none;border-radius:4px;cursor:pointer;font-size:16px;
           box-shadow:0 2px 6px rgba(0,0,0,.5);">🌍</button>
@@ -881,6 +881,24 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:11px;heigh
 </div>
 
 <div id="mob-overlay" onclick="toggleDrawer()"></div>
+
+<!-- KMLパスワード認証モーダル -->
+<div id="modal-kml-auth" style="display:none;position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,0.75);align-items:center;justify-content:center;">
+  <div style="background:var(--sur);border:1px solid var(--bd);border-radius:10px;padding:24px 20px;width:280px;max-width:90vw;text-align:center;">
+    <div style="font-family:'Space Mono',monospace;font-size:12px;font-weight:700;color:var(--ac);margin-bottom:12px;">🔒 KMZダウンロード</div>
+    <p style="font-size:10px;color:var(--sub);margin-bottom:14px;line-height:1.6;">パスワードを入力してください</p>
+    <input id="kml-pw-input" type="password" placeholder="パスワード"
+      style="width:100%;box-sizing:border-box;background:var(--bg);border:1px solid var(--bd);border-radius:6px;color:var(--tx);font-family:'Space Mono',monospace;font-size:14px;padding:8px 10px;margin-bottom:10px;outline:none;"
+      onkeydown="if(event.key==='Enter')checkKmlPW()">
+    <div id="kml-pw-err" style="font-size:10px;color:#e87;min-height:14px;margin-bottom:10px;"></div>
+    <div style="display:flex;gap:8px;justify-content:center;">
+      <button onclick="checkKmlPW()"
+        style="flex:1;background:var(--ac);border:none;border-radius:6px;color:#10131c;font-family:'Space Mono',monospace;font-size:11px;font-weight:700;padding:8px;cursor:pointer;">確認</button>
+      <button onclick="document.getElementById('modal-kml-auth').style.display='none';document.getElementById('kml-pw-input').value='';document.getElementById('kml-pw-err').textContent='';"
+        style="flex:1;background:var(--sur2);border:1px solid var(--bd);border-radius:6px;color:var(--tx);font-family:'Space Mono',monospace;font-size:11px;padding:8px;cursor:pointer;">閉じる</button>
+    </div>
+  </div>
+</div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
@@ -6684,6 +6702,39 @@ function bearingDistance(lat1,lng1,lat2,lng2){
   const x=Math.cos(toRad(lat1))*Math.sin(toRad(lat2))-Math.sin(toRad(lat1))*Math.cos(toRad(lat2))*Math.cos(dLng);
   const bearing=((Math.atan2(y,x)*180/Math.PI)+360)%360;
   return [dist, bearing];
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// KMZ パスワード認証
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+const _KH = '2224512ef44a62e580bb1c0dcb33aff688f4e7da8a488aeb4e7ca402c5cacf45';
+let _kmlPendingFn = null;
+
+function openKmlAuthModal(fnName){
+  if(sessionStorage.getItem('kmlAuth')==='1'){
+    window[fnName](); return;
+  }
+  _kmlPendingFn = fnName;
+  document.getElementById('kml-pw-input').value='';
+  document.getElementById('kml-pw-err').textContent='';
+  document.getElementById('modal-kml-auth').style.display='flex';
+  setTimeout(()=>document.getElementById('kml-pw-input').focus(),100);
+}
+
+async function checkKmlPW(){
+  const v = document.getElementById('kml-pw-input').value;
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(v));
+  const hex = Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join('');
+  if(hex === _KH){
+    sessionStorage.setItem('kmlAuth','1');
+    document.getElementById('modal-kml-auth').style.display='none';
+    document.getElementById('kml-pw-input').value='';
+    if(_kmlPendingFn) window[_kmlPendingFn]();
+  } else {
+    document.getElementById('kml-pw-err').textContent='パスワードが違います';
+    document.getElementById('kml-pw-input').value='';
+    setTimeout(()=>document.getElementById('kml-pw-err').textContent='',2000);
+  }
 }
 
 // メイン：アニメーションKMZを生成してダウンロード
