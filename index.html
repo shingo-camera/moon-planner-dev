@@ -13,6 +13,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>月×建造物 撮影プランナー</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<link rel="stylesheet" href="https://unpkg.com/leaflet-geosearch@3.11.1/dist/geosearch.css"/>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌕</text></svg>">
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&family=Space+Mono:wght@400;700&display=swap');
@@ -235,6 +236,19 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:11px;heigh
 .tripod-val{font-family:'Space Mono',monospace;font-size:16px;color:var(--ac);text-align:center;margin:2px 0;}
 .tripod-val span{font-size:9px;color:var(--sub);}
 .leaflet-popup-content-wrapper{background:#181c2e!important;color:#e8eaf0!important;
+/* leaflet-geosearch カスタムスタイル */
+.leaflet-control-geosearch form{background:#1a2035!important;border:1px solid #3a4060!important;border-radius:6px!important;}
+.leaflet-control-geosearch form input{background:#1a2035!important;color:#e8eaf0!important;border:none!important;font-size:12px!important;}
+.leaflet-control-geosearch form input::placeholder{color:#5a6080!important;}
+.leaflet-control-geosearch .results{background:#1a2035!important;border:1px solid #3a4060!important;color:#e8eaf0!important;max-width:220px!important;}
+.leaflet-control-geosearch .results > *{border-top:1px solid #2a3050!important;}
+.leaflet-control-geosearch .results > *:hover{background:#2a3a5a!important;}
+.leaflet-control-geosearch a.reset{color:#e8874a!important;}
+/* スマホ：検索ボックスの幅を制限して右側コントロールと重ならないようにする */
+@media(max-width:480px){
+  .leaflet-control-geosearch form{max-width:calc(100vw - 120px)!important;}
+  .leaflet-control-geosearch .results{max-width:calc(100vw - 120px)!important;}
+}
   border:1px solid #252a40!important;border-radius:7px!important;box-shadow:none!important;}
 .leaflet-popup-tip{background:#181c2e!important;}
 .leaflet-popup-content{margin:8px 12px!important;font-size:11px!important;}
@@ -901,6 +915,7 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:11px;heigh
 </div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet-geosearch@3.11.1/dist/geosearch.umd.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script>
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -1709,7 +1724,51 @@ function initMap(){
   });
   osmLayer.addTo(map);
 
-  // 地図切替ボタン
+  // 地名・住所検索（国土地理院API）
+  class GsiProvider extends GeoSearch.OpenStreetMapProvider {
+    async search({query, data}){
+      if(data) return [data];
+      const url=`https://msearch.gsi.go.jp/address-search/AddressSearch?q=${encodeURIComponent(query)}`;
+      const res=await fetch(url);
+      const json=await res.json();
+      return json.map(item=>({
+        x:item.geometry.coordinates[0],
+        y:item.geometry.coordinates[1],
+        label:item.properties.title,
+        bounds:null,
+        raw:item,
+      }));
+    }
+  }
+  const searchControl=new GeoSearch.GeoSearchControl({
+    provider:new GsiProvider(),
+    style:'button',
+    position:'topleft',
+    placeholder:'地名・住所で検索',
+    notFoundMessage:'見つかりませんでした',
+    autoClose:false,
+    autoComplete:true,
+    autoCompleteDelay:500,
+    retainZoomLevel:false,
+    zoomLevel:15,
+    animateZoom:true,
+    keepResult:false,
+    searchLabel:'検索',
+  });
+  map.addControl(searchControl);
+  // iOSSafari IME問題対策・Enter問題対策
+  setTimeout(()=>{
+    const input=document.querySelector('.leaflet-control-geosearch input');
+    const form=document.querySelector('.leaflet-control-geosearch form');
+    if(input){
+      input.addEventListener('compositionend',()=>{
+        setTimeout(()=>input.dispatchEvent(new Event('input',{bubbles:true})),50);
+      });
+    }
+    if(form){
+      form.addEventListener('submit',e=>{e.preventDefault();e.stopPropagation();},true);
+    }
+  },1000);
   const MapCtrl=L.Control.extend({
     options:{position:'topright'},
     onAdd(){
