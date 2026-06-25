@@ -1702,10 +1702,10 @@ function initMap(){
        .setView([t.lat,t.lng],t.zoom);
 
   const osmLayer=L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
-    attribution:'© OpenStreetMap contributors',maxZoom:19
+    attribution:'© OpenStreetMap contributors',maxZoom:20,maxNativeZoom:19
   });
-  const esriLayer=L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{
-    attribution:'© Esri, Maxar, Earthstar Geographics',maxZoom:19
+  const esriLayer=L.tileLayer('https://cyberjapandata.gsi.go.jp/xyz/seamlessphoto/{z}/{x}/{y}.jpg',{
+    attribution:'© 国土地理院',maxZoom:20,maxNativeZoom:18
   });
   osmLayer.addTo(map);
 
@@ -1748,7 +1748,14 @@ function initMap(){
             sLat=pos.coords.latitude;
             sLng=pos.coords.longitude;
             btn.innerHTML='📍';
-            if(map)map.setView([sLat,sLng],map.getZoom());
+            if(map){
+              map.setView([sLat,sLng],map.getZoom());
+              if(window._locMarker) map.removeLayer(window._locMarker);
+              window._locMarker=L.circleMarker([sLat,sLng],{
+                radius:8,color:'#2080ff',fillColor:'#4499ff',
+                fillOpacity:0.9,weight:2
+              }).addTo(map).bindTooltip('現在地',{permanent:false,direction:'top'});
+            }
             onPick();
           },
           err=>{
