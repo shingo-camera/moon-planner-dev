@@ -7179,6 +7179,10 @@ async function downloadAnimationKmz(){
       <LabelStyle><scale>20.0</scale><color>ffffffff</color></LabelStyle>
       <IconStyle><scale>0</scale></IconStyle>
     </Style>
+    <Style id="time_style_t2">
+      <LabelStyle><scale>${Math.max(1.0, 20.0 * virtRatio).toFixed(2)}</scale><color>ffffffff</color></LabelStyle>
+      <IconStyle><scale>0</scale></IconStyle>
+    </Style>
     <Placemark id="time_label">
       <name>${jstTimeStr(steps[0].time)}</name>
       <styleUrl>#time_style</styleUrl>
@@ -7258,6 +7262,12 @@ async function downloadAnimationKmz(){
             <gx:horizFov>10.29</gx:horizFov>
           </Camera>
         </gx:FlyTo>
+        <gx:AnimatedUpdate>
+          <gx:duration>0</gx:duration>
+          <Update><targetHref></targetHref><Change>
+            <Placemark targetId="time_label"><styleUrl>#time_style_t2</styleUrl></Placemark>
+          </Change></Update>
+        </gx:AnimatedUpdate>
 `;
     for(let i=1;i<positions.length;i++){
       const p=positions[i];
@@ -7284,7 +7294,13 @@ async function downloadAnimationKmz(){
         </gx:Wait>
 `;
     }
-    kml+=`        <gx:Wait>
+    kml+=`        <gx:AnimatedUpdate>
+          <gx:duration>0</gx:duration>
+          <Update><targetHref></targetHref><Change>
+            <Placemark targetId="time_label"><styleUrl>#time_style</styleUrl></Placemark>
+          </Change></Update>
+        </gx:AnimatedUpdate>
+        <gx:Wait>
           <gx:duration>3600</gx:duration>
         </gx:Wait>
       </gx:Playlist>
