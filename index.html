@@ -2701,6 +2701,10 @@ function drawView(dist,tAz,va){
   if(!cv||!cv.width||!cv.height)return;
   const W=cv.width, H=cv.height;
   const ctx=cv.getContext('2d');
+  // 拡大表示時はrenderRatio>1（ZOOM_OVERSAMPLE=6）
+  const renderRatio=parseFloat(cv.dataset.renderRatio||'1');
+  const isZoom=renderRatio>1;
+  const rs=renderRatio; // フォントサイズ乗数
 
   const fvH=compMode==='land'?fovD(focal):fovV(focal);
   const fvV=compMode==='land'?fovV(focal):fovD(focal);
@@ -2945,7 +2949,7 @@ function drawView(dist,tAz,va){
       ctx.shadowColor=`rgba(255,${g1},0,.6)`;ctx.shadowBlur=mr*1.2;
       ctx.fill();ctx.shadowBlur=0;
       ctx.restore();
-      ctx.font=`bold 11px 'Space Mono',monospace`;ctx.textAlign='center';
+      ctx.font=`bold ${Math.round(11*rs)}px 'Space Mono',monospace`;ctx.textAlign='center';
       const slabel=`太陽 ${mAlt.toFixed(1)}° / AZ${mAz.toFixed(0)}° / ø${bodyAngDiam.toFixed(3)}°`;
       const slw=ctx.measureText(slabel).width;
       ctx.fillStyle='rgba(10,15,28,0.7)';ctx.fillRect(moonX-slw/2-4,moonY-mrV-18,slw+8,14);
@@ -3007,7 +3011,7 @@ function drawView(dist,tAz,va){
       ctx.shadowBlur=mr*0.6;ctx.strokeStyle='transparent';ctx.stroke();ctx.shadowBlur=0;
       ctx.restore();
       // ラベル（月齢・角直径も表示）
-      ctx.font=`bold 11px 'Space Mono',monospace`;ctx.textAlign='center';
+      ctx.font=`bold ${Math.round(11*rs)}px 'Space Mono',monospace`;ctx.textAlign='center';
       const mlabel=`月 ${mAlt.toFixed(1)}° / AZ${mAz.toFixed(0)}° / ø${bodyAngDiam.toFixed(2)}°`;
       const mlw=ctx.measureText(mlabel).width;
       ctx.fillStyle=`rgba(${skyBrightness>0.65?220:10},${skyBrightness>0.65?220:15},${skyBrightness>0.65?255:28},0.75)`;ctx.fillRect(moonX-mlw/2-4,moonY-mrV-18,mlw+8,14);
@@ -3637,7 +3641,7 @@ function drawView(dist,tAz,va){
       }
       if(isMobPv){
         // スマホ：奇数分→右端列、偶数分→右端から内側列の2列交互表示
-        ctx.font=`bold 10px 'Space Mono',monospace`;
+        ctx.font=`bold ${Math.round(10*rs)}px 'Space Mono',monospace`;
         const labelW = ctx.measureText('00:00').width; // 固定幅(5文字)
         const colPad = 4;   // 右端の余白
         const colGap = 6;   // 2列間のギャップ
@@ -3666,7 +3670,7 @@ function drawView(dist,tAz,va){
           ctx.moveTo(item.p.x + 4, ly);
           ctx.lineTo(lx - 3, ly);
           ctx.strokeStyle = lineColor;
-          ctx.lineWidth = 0.8; ctx.setLineDash([2,3]); ctx.stroke(); ctx.setLineDash([]);
+          ctx.lineWidth = Math.max(0.8,rs*0.8); ctx.setLineDash([Math.round(2*rs),Math.round(3*rs)]); ctx.stroke(); ctx.setLineDash([]);
 
           // テキスト（半透明白背景＋黒縁取りで視認性とシルエット透過性を両立）
           const bgRect = 'rgba(240,240,248,0.72)';
@@ -3676,7 +3680,7 @@ function drawView(dist,tAz,va){
           ctx.textAlign = 'left';
           const _tw = ctx.measureText(item.label).width;
           ctx.fillStyle = bgRect;
-          ctx.fillRect(lx-2, ly-9, _tw+4, 11);
+          ctx.fillRect(lx-Math.round(2*rs), ly-Math.round(9*rs), _tw+Math.round(4*rs), Math.round(11*rs));
           ctx.strokeStyle = 'rgba(255,255,255,0.6)';
           ctx.lineWidth = 2; ctx.lineJoin = 'round';
           ctx.strokeText(item.label, lx, ly-1);
@@ -3685,7 +3689,7 @@ function drawView(dist,tAz,va){
         }
       } else {
         // PC：軌跡横にラベル（白背景＋黒テキストで全時間帯視認性確保）
-        ctx.font=`9px 'Space Mono',monospace`;
+        ctx.font=`${Math.round(9*rs)}px 'Space Mono',monospace`;
         for(const item of labelItems){
           if(!item.isNear && item.p.x<0||item.p.x>W||item.p.y<0||item.p.y>H)continue;
           const lx=item.p.x+(item.p.x<cx?-5:5);
@@ -3693,7 +3697,7 @@ function drawView(dist,tAz,va){
           const col=item.isNear?(item.isPast?'rgba(10,50,140,0.95)':'rgba(130,60,0,0.95)'):'rgba(30,30,60,0.80)';
           const _tw2=ctx.measureText(item.label).width;
           const _bx=item.p.x<cx?lx-_tw2-2:lx-2;
-          ctx.fillStyle='rgba(240,240,248,0.72)'; ctx.fillRect(_bx,item.p.y-9,_tw2+4,11);
+          ctx.fillStyle='rgba(240,240,248,0.72)'; ctx.fillRect(_bx,item.p.y-Math.round(9*rs),_tw2+Math.round(4*rs),Math.round(11*rs));
           ctx.strokeStyle='rgba(255,255,255,0.6)';ctx.lineWidth=2;ctx.lineJoin='round';
           ctx.strokeText(item.label,lx,item.p.y-1);
           ctx.fillStyle=col;
@@ -3701,6 +3705,49 @@ function drawView(dist,tAz,va){
         }
       }
       ctx.restore();
+
+      // ── 拡大時のみ：5秒刻み軌跡ティック ──
+      if(isZoom&&ds&&ts&&sLat!==null){
+        try{
+          const dt0=new Date(`${ds}T${ts}:00+09:00`);
+          const TICK_SEC=5;
+          const TICK_RANGE=480; // ±8分
+          const tickPts=[];
+          for(let os=-TICK_RANGE;os<=TICK_RANGE;os+=TICK_SEC){
+            if(os===0)continue; // 現在時刻はマーカーで表示
+            const t=new Date(dt0.getTime()+os*1000);
+            const bp2=sunsetMode?sunPos(t,sLat,sLng):moonPos(t,sLat,sLng);
+            const dAz2=azDiff(tAz,bp2.az);
+            const tx2=cx+gnoH(dAz2);
+            const ty2=toY_cam(bp2.alt);
+            if(tx2<-W||tx2>2*W||ty2<-H||ty2>2*H)continue;
+            const isMin=(Math.abs(os)%60===0); // 1分刻み
+            tickPts.push({x:tx2,y:ty2,os,isMin});
+          }
+          // 軌跡方向に対して垂直なティック線
+          ctx.save();
+          for(let i=0;i<tickPts.length;i++){
+            const p=tickPts[i];
+            // 前後の点から軌跡方向を計算
+            const prev=tickPts[i-1]||p, next=tickPts[i+1]||p;
+            const dx=next.x-prev.x, dy=next.y-prev.y;
+            const len=Math.sqrt(dx*dx+dy*dy)||1;
+            const nx=-dy/len, ny=dx/len; // 軌跡に垂直な単位ベクトル
+            const isPast=p.os<0;
+            const tickLen=p.isMin?Math.round(14*rs):Math.round(7*rs);
+            const alpha=0.7;
+            ctx.strokeStyle=isPast
+              ?`rgba(100,180,255,${alpha})`
+              :`rgba(220,160,60,${alpha})`;
+            ctx.lineWidth=Math.round(1.5*rs);
+            ctx.beginPath();
+            ctx.moveTo(p.x+nx*tickLen/2, p.y+ny*tickLen/2);
+            ctx.lineTo(p.x-nx*tickLen/2, p.y-ny*tickLen/2);
+            ctx.stroke();
+          }
+          ctx.restore();
+        }catch(e){}
+      }
 
       // ── 3. 現在時刻マーカー（固定の◎）──
       ctx.save();
@@ -3718,7 +3765,7 @@ function drawView(dist,tAz,va){
     if(Math.abs(dAzInCam)>fvH/2){
       const label=sunsetMode?'太陽':'月';
       ctx.fillStyle=sunsetMode?'#ffaa44':'#7eb8e8';
-      ctx.font=`10px 'Space Mono',monospace`;ctx.textAlign='center';
+      ctx.font=`${Math.round(10*rs)}px 'Space Mono',monospace`;ctx.textAlign='center';
       ctx.fillText(`${dAzInCam>0?label+' →':'← '+label} (${Math.abs(dAzInCam).toFixed(1)}° FOV外)`,cx,H*0.4);
     }
   }
@@ -3850,7 +3897,7 @@ function drawView(dist,tAz,va){
         const [px1]=tt_gp( r_start*Math.sin(Math.PI/8),y_start,z_f);
         const faceW_px=Math.abs(px1-px0);
         const fs=Math.max(4,Math.floor(faceW_px*0.85));
-        ctx.font=`bold ${fs}px sans-serif`;
+        ctx.font=`bold ${Math.round(fs*rs)}px sans-serif`;
         ctx.textAlign='center';ctx.textBaseline='middle';
         const charH_m=fs/(TT_TOTAL/TT_H);
         for(let i=0;i<text.length;i++){
@@ -3870,7 +3917,7 @@ function drawView(dist,tAz,va){
   if(!bodyVisible&&mAz!==null){
     const label=sunsetMode?'太陽は地平線以下':'月は地平線以下';
     ctx.fillStyle=sunsetMode?'rgba(255,150,50,.5)':'rgba(126,184,232,.5)';
-    ctx.font=`9px 'Space Mono',monospace`;ctx.textAlign='center';
+    ctx.font=`${Math.round(9*rs)}px 'Space Mono',monospace`;ctx.textAlign='center';
     ctx.fillText(label,cx,horizon-20);
   }
   // 情報ラベル（オフセット外：canvas固定位置に表示）
@@ -3878,9 +3925,9 @@ function drawView(dist,tAz,va){
   const bodyName=sunsetMode?'太陽':'月';
   const fovLabel=`FOV ${fvH.toFixed(1)}°  ${bodyName} ${bodyAngDiam.toFixed(3)}°  ${T[cur].name}頂 ${angS(T[cur].h,dist).toFixed(1)}°  仰角 ${vaTop.toFixed(2)}°`;
   // canvas幅に収まるようフォントサイズを自動縮小（8px→最小6px）
-  let fovFs=8;
+  let fovFs=Math.round(8*rs);
   ctx.font=`${fovFs}px 'Space Mono',monospace`;
-  while(ctx.measureText(fovLabel).width>W-10&&fovFs>6){ fovFs--; ctx.font=`${fovFs}px 'Space Mono',monospace`; }
+  while(ctx.measureText(fovLabel).width>W-10&&fovFs>Math.round(6*rs)){ fovFs--; ctx.font=`${fovFs}px 'Space Mono',monospace`; }
   ctx.textAlign='left';
   {
     const fovW=ctx.measureText(fovLabel).width;
@@ -3891,9 +3938,9 @@ function drawView(dist,tAz,va){
   // 左上に設定日時を大きく表示（canvas幅に収まるようフォントサイズ自動調整）
   if(ds&&ts){
     const dtLabel=`${ds} ${ts}`;
-    let dtFs=14;
+    let dtFs=Math.round(14*rs);
     ctx.font=`bold ${dtFs}px 'Space Mono',monospace`;
-    while(ctx.measureText(dtLabel).width>W*0.92&&dtFs>9){
+    while(ctx.measureText(dtLabel).width>W*0.92&&dtFs>Math.round(9*rs)){
       dtFs--;
       ctx.font=`bold ${dtFs}px 'Space Mono',monospace`;
     }
