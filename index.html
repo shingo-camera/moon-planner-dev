@@ -6967,8 +6967,34 @@ async function downloadAnimationKmz(){
   const camElev=sElev;
   const [distKm, targetAz]=bearingDistance(sLat,sLng,target.lat,target.lng);
   const targetTopElev=target.elev+target.h;
-  const camAimElevDeg=Math.atan((targetTopElev-camElev)/1000/distKm)*180/Math.PI;
-  const camTilt=90+camAimElevDeg;
+
+  // ── プレビューと同じalpha_cam計算でcamTiltを求める ──
+  // drawViewと同じtopRatioロジックを使い、対象頂点の画面位置からカメラ光軸仰角を逆算
+  function calcAlphaCam(fromElev, toTopElev, toBaseElev, distH_km, fvV_deg, canvasH){
+    const r=Math.PI/180;
+    const f_px_V = canvasH / (2*Math.tan(fvV_deg/2*r));
+    const vaTop = Math.atan2(toTopElev - fromElev, distH_km*1000) * 180/Math.PI;
+    const vaBase = Math.atan2(toBaseElev - fromElev, distH_km*1000) * 180/Math.PI;
+    const angSize = Math.max(vaTop - vaBase, 0);
+    const sizeRatio = Math.min(angSize / fvV_deg, 1);
+    const isPL = target.silhouette === 'pl';
+    const topRatio = isPL
+      ? Math.min(0.60, Math.max(0.40, 0.60 - sizeRatio * 0.20))
+      : Math.min(0.45, Math.max(0.30, 0.45 - sizeRatio * 0.15));
+    const targetTopY = canvasH * (1 - topRatio);
+    const alpha_cam_rad = vaTop*r - Math.atan((canvasH/2 - targetTopY) / f_px_V);
+    return alpha_cam_rad / r;
+  }
+
+  // canvas想定サイズ（drawViewと同じ比率で計算）
+  const CANVAS_H = 800;
+
+  // ツアー1：実際の焦点距離の垂直画角でalpha_camを計算
+  const fvV_t1 = compMode==='land'
+    ? 2*Math.atan(24/(2*focal))*180/Math.PI
+    : 2*Math.atan(36/(2*focal))*180/Math.PI;
+  const alphaCam_t1 = calcAlphaCam(camElev, targetTopElev, target.elev, distKm, fvV_t1, CANVAS_H);
+  const camTilt = 90 + alphaCam_t1;
 
   // 193ステップ(±8分,5秒間隔)の天体位置を計算
   const steps=[];
@@ -7003,10 +7029,10 @@ async function downloadAnimationKmz(){
   }
   const daeString=buildBodyDaeString(pngFilename);
 
-  // 時刻ラベル高度（画面比率ベース、距離に依存しない固定見え方）
-  const fovV=2*Math.atan(24/(2*200))*180/Math.PI;
+  // 時刻ラベル高度（カメラ光軸仰角から上方向30%の位置）
+  const fovV_label=2*Math.atan(24/(2*200))*180/Math.PI;
   const screenRatio=0.3;
-  const labelElevDeg=camAimElevDeg+fovV*screenRatio;
+  const labelElevDeg=alphaCam_t1+fovV_label*screenRatio;
   const labelHeight=distKm*1000*Math.tan(labelElevDeg*Math.PI/180)+camElev;
 
   function jstTimeStr(d){
@@ -7101,14 +7127,17 @@ async function downloadAnimationKmz(){
   const dist3dM=Math.sqrt((distKm*1000)**2+(targetTopElev-camElev)**2);
   const elevRad=Math.atan2(targetTopElev-camElev, distKm*1000);
   const moveM=dist3dM*(1-virtRatio);
-  const moveH=moveM*Math.cos(elevRad); // 水平移動距離(m)
-  const moveV=moveM*Math.sin(elevRad); // 垂直移動距離(m)
+  const moveH=moveM*Math.cos(elevRad);
+  const moveV=moveM*Math.sin(elevRad);
   const [virtLat,virtLng]=destPointFromBearing(sLat,sLng,targetAz,moveH/1000);
   const virtElev=camElev+moveV;
-  // 等価視点から対象を見た仰角・チルト
   const virtDistH=distKm*1000-moveH;
-  const virtAimElevDeg=Math.atan2(targetTopElev-virtElev,virtDistH)*180/Math.PI;
-  const virtCamTilt=90+virtAimElevDeg;
+
+  // ツアー2のvirtCamTilt：GEPの垂直画角（fovLimit/(3/2)）でalpha_camを計算
+  // GEPはhorizFov=10.29°固定、3:2画面なので垂直画角=10.29°/(3/2)
+  const fovV_t2 = fovGepH / (3/2);
+  const alphaCam_t2 = calcAlphaCam(virtElev, targetTopElev, target.elev, virtDistH/1000, fovV_t2, CANVAS_H);
+  const virtCamTilt = 90 + alphaCam_t2;
 
   const bodyLabel=sunsetMode?'太陽':'月';
 
