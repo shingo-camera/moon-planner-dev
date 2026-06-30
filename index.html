@@ -3041,7 +3041,10 @@ function drawView(dist,tAz,va){
 
   // 対象シルエット
   // tY（頂点）・bY（根本）: α_cam基準gnomonic投影
-  const tY=targetTopY;  // = toY_cam(vaTop) と一致
+  // pvAltOfsを加えるとalpha_camが動くため、tYもtargetTopY固定ではなくtoY_cam(vaTop)で
+  // 再計算する。これによりpvAltOfsを変えても被写体の見かけサイズ(thTrue)が保たれる
+  // （pvAltOfs=0のときはtoY_cam(vaTop)===targetTopYと一致する設計）
+  const tY=toY_cam(vaTop);
   // 根本Y：仰角vaBaseの位置（俯瞰時は地平線より下 = horizonより大きいY）
   // vaBaseがvaTopより大きい場合（撮影地点より城根本が高い地形等）はvaTopを根本として扱う
   const bY_raw=toY_cam(vaBase);
