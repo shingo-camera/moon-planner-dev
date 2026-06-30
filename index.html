@@ -2703,10 +2703,12 @@ function drawView(dist,tAz,va){
   const ctx=cv.getContext('2d');
   // 拡大表示時はrenderRatio>1（ZOOM_OVERSAMPLE=6）
   const renderRatio=parseFloat(cv.dataset.renderRatio||'1');
-  // カメラ視点オフセット：実際にカメラを振った状態として方位角・仰角に直接加算
-  // （以前はtranslateで画面位置だけずらしていたが、地平線・山等が画面端で切れる問題があったため
-  //   カメラの向き自体を変える方式に変更。これによりhanabiと同じ「実際に振った」見え方になる）
-  tAz = ((tAz + pvAzOfs) % 360 + 360) % 360;
+  // カメラ視点オフセット：hanabiと同じ設計
+  //   tAz: 対象（被写体）の実際の方位角（固有値、オフセット非依存のまま保持）
+  //   camAz: カメラが実際に向いている方位角（tAz + pvAzOfs）
+  // 全ての方位計算は azDiff(camAz, 対象の実方位) で行うことで、
+  // 対象自体の画面位置もオフセットに応じて正しく動くようにする（hanabiのcamAz方式）
+  const camAz = ((tAz + pvAzOfs) % 360 + 360) % 360;
   // vaは被写体固有の仰角のまま保持（pvAltOfsはalpha_cam計算時にのみ加算し、
   // sizeRatio/topRatio等の見かけサイズ計算に影響させない）
   const isZoom=renderRatio>1;
@@ -2723,6 +2725,10 @@ function drawView(dist,tAz,va){
   const gnoH=deg=>f_px_H*Math.tan(deg*r);  // 水平方向
   const gnoV=deg=>f_px_V*Math.tan(deg*r);  // 垂直方向
   const cx=W/2;
+  // 対象（PL塔・城・タワー等）の画面上の中心X座標
+  // カメラがcamAzを向いているとき、対象(実方位tAz)はazDiff(camAz,tAz)だけ中心からズレる
+  // hanabiのpxX = W/2 + f_px_H*tan(azDiff(camAz,objAz)) と同じ考え方
+  const cxTarget = cx + gnoH(azDiff(camAz, tAz));
 
   // 背景（オフセット前に描画）
   {
@@ -2916,7 +2922,7 @@ function drawView(dist,tAz,va){
 
   let moonX=cx,moonY=toY_cam(-5); // デフォルト：画面外下
   if(mAz!==null){
-    const dAz=azDiff(tAz,mAz);
+    const dAz=azDiff(camAz,mAz);
     moonX=cx+gnoH(dAz);
     moonY=toY_cam(mAlt);
   }
@@ -3031,7 +3037,7 @@ function drawView(dist,tAz,va){
   }
 
   // 橋シルエット（PL・通天閣選択時のみ、ランドマーク・天体より奥のレイヤー）
-  drawBridges(ctx, W, H, tAz, toY_cam, f_px_H, gnoH, r, sLat, sLng, sElev);
+  drawBridges(ctx, W, H, camAz, toY_cam, f_px_H, gnoH, r, sLat, sLng, sElev);
 
   // 対象シルエット
   // tY（頂点）・bY（根本）: α_cam基準gnomonic投影
@@ -3061,7 +3067,7 @@ function drawView(dist,tAz,va){
     ctx.lineWidth=1.2;
     ctx.beginPath();
     PL_PTS.forEach(([dx,dy],i)=>{
-      const plx=cx+dx*plW;
+      const plx=cxTarget+dx*plW;
       // Y: dy比率で vaTop〜vaBase を線形補間 → toY_camで物理的に正確なY
       const alt_dy = vaTop + dy*(vaBase-vaTop);
       const ply = toY_cam(alt_dy);
@@ -3072,14 +3078,14 @@ function drawView(dist,tAz,va){
     ctx.strokeStyle='rgba(200,169,110,.4)';ctx.lineWidth=0.7;ctx.setLineDash([3,3]);
     [1/3,2/3].forEach(ratio=>{
       const lineY=toY_cam(vaTop+ratio*(vaBase-vaTop));
-      let lx=cx,rx=cx;
+      let lx=cxTarget,rx=cxTarget;
       for(let i=0;i<PL_PTS.length-1;i++){
         const [dx0,dy0]=PL_PTS[i],[dx1,dy1]=PL_PTS[i+1];
         const y0=toY_cam(vaTop+dy0*(vaBase-vaTop));
         const y1=toY_cam(vaTop+dy1*(vaBase-vaTop));
         if((y0<=lineY&&lineY<=y1)||(y1<=lineY&&lineY<=y0)){
           const t2=(lineY-y0)/(y1-y0||1e-9);
-          const ix=cx+(dx0+(dx1-dx0)*t2)*plW;
+          const ix=cxTarget+(dx0+(dx1-dx0)*t2)*plW;
           if(ix>rx)rx=ix; if(ix<lx)lx=ix;
         }
       }
@@ -3118,7 +3124,7 @@ function drawView(dist,tAz,va){
       const pxY = toY_cam(alt_y + rzAngCorr);
       const rx_m     = rx;  // xmはm単位で渡しているため変換不要
       const rxAngDeg = Math.atan2(rx_m, dist * 1000) * 180 / Math.PI;
-      return [cx + gnoH(rxAngDeg), pxY];
+      return [cxTarget + gnoH(rxAngDeg), pxY];
     };
 
     // m→px変換（高さ方向）
@@ -3269,8 +3275,8 @@ function drawView(dist,tAz,va){
 
         const mH = mBaseY - mTopY;
         const slope = mH * 1.5;
-        const baseLeft  = Math.max(0, cx - flatHalf - slope);
-        const baseRight = Math.min(W, cx + flatHalf + slope);
+        const baseLeft  = Math.max(0, cxTarget - flatHalf - slope);
+        const baseRight = Math.min(W, cxTarget + flatHalf + slope);
         ctx.save();
         ctx.beginPath();ctx.rect(0,0,W,H);ctx.clip();
         ctx.fillStyle='#1a3020';
@@ -3278,8 +3284,8 @@ function drawView(dist,tAz,va){
         ctx.lineWidth=1.2;
         ctx.beginPath();
         ctx.moveTo(baseLeft,  mBaseY);
-        ctx.lineTo(cx - flatHalf, mTopY);
-        ctx.lineTo(cx + flatHalf, mTopY);
+        ctx.lineTo(cxTarget - flatHalf, mTopY);
+        ctx.lineTo(cxTarget + flatHalf, mTopY);
         ctx.lineTo(baseRight, mBaseY);
         ctx.closePath();
         ctx.fill();ctx.stroke();
@@ -3328,7 +3334,7 @@ function drawView(dist,tAz,va){
       // rx_m = rx * th / G_TOTAL  (G_TOTALpx : th_m = rx_px : rx_m)
       const rx_m = rx * T[cur].h / G_TOTAL;
       const rxAngDeg = Math.atan2(rx_m, dist * 1000) * 180 / Math.PI;
-      return [cx + gnoH(rxAngDeg), pxCanvas];
+      return [cxTarget + gnoH(rxAngDeg), pxCanvas];
     };
     // depth = zオフセット + yCenter（上の層ほどdepth大=先に描画=奥扱い）
     // depth = zオフセット + yCenter（上の層ほどdepth大=先に描画=奥扱い）
@@ -3536,11 +3542,11 @@ function drawView(dist,tAz,va){
         if(m>1440)break;
         const dt=new Date(dayStart.getTime()+m*60000);
         const bp=sunsetMode?sunPos(dt,sLat,sLng):moonPos(dt,sLat,sLng);
-        const daz=Math.abs(azDiff(tAz,bp.az));
+        const daz=Math.abs(azDiff(camAz,bp.az));
         // Y座標はH*3までclamp（tanの発散防止・地平線以下も連続描画）
         const yRaw=toY_cam(bp.alt);
         const y=Math.max(-H*2, Math.min(H*3, yRaw));
-        dayPts.push({x:cx+gnoH(azDiff(tAz,bp.az)), y, m, alt:bp.alt, daz});
+        dayPts.push({x:cx+gnoH(azDiff(camAz,bp.az)), y, m, alt:bp.alt, daz});
       }
 
       // グレー軌道線
@@ -3597,8 +3603,8 @@ function drawView(dist,tAz,va){
         const dtFwdB=new Date(dt0.getTime()+dayStep*2*60000);
         const bpA=sunsetMode?sunPos(dtFwdA,sLat,sLng):moonPos(dtFwdA,sLat,sLng);
         const bpB=sunsetMode?sunPos(dtFwdB,sLat,sLng):moonPos(dtFwdB,sLat,sLng);
-        const axA=cx+gnoH(azDiff(tAz,bpA.az)), ayA=toY_cam(bpA.alt);
-        const axB=cx+gnoH(azDiff(tAz,bpB.az)), ayB=toY_cam(bpB.alt);
+        const axA=cx+gnoH(azDiff(camAz,bpA.az)), ayA=toY_cam(bpA.alt);
+        const axB=cx+gnoH(azDiff(camAz,bpB.az)), ayB=toY_cam(bpB.alt);
         const ang=Math.atan2(ayB-ayA, axB-axA);
         const arrowDist=Math.max(mr,mrV)+22;
         const arrowX=moonX+Math.cos(ang)*arrowDist;
@@ -3719,7 +3725,7 @@ function drawView(dist,tAz,va){
             if(os===0)continue; // 現在時刻はマーカーで表示
             const t=new Date(dt0.getTime()+os*1000);
             const bp2=sunsetMode?sunPos(t,sLat,sLng):moonPos(t,sLat,sLng);
-            const dAz2=azDiff(tAz,bp2.az);
+            const dAz2=azDiff(camAz,bp2.az);
             const tx2=cx+gnoH(dAz2);
             const ty2=toY_cam(bp2.alt);
             if(tx2<-W||tx2>2*W||ty2<-H||ty2>2*H)continue;
@@ -3762,7 +3768,7 @@ function drawView(dist,tAz,va){
   }
   // 月/太陽がFOV外（pvAzOfsによるカメラ向きオフセットを加味）
   if(bodyVisible&&mAz!==null){
-    const dAz=azDiff(tAz,mAz);
+    const dAz=azDiff(camAz,mAz);
     const dAzInCam=dAz-pvAzOfs; // カメラ座標系での方位角ずれ
     if(Math.abs(dAzInCam)>fvH/2){
       const label=sunsetMode?'太陽':'月';
@@ -3792,7 +3798,7 @@ function drawView(dist,tAz,va){
       const rzAngCorr=Math.atan2(rz*Math.sin(vaTop*Math.PI/180),dist*1000)*180/Math.PI;
       const pxY=toY_cam(alt_y+rzAngCorr);
       const rxAngDeg=Math.atan2(rx,dist*1000)*180/Math.PI;
-      return[cx+gnoH(rxAngDeg),pxY];
+      return[cxTarget+gnoH(rxAngDeg),pxY];
     };
 
     // 全面バッファ
