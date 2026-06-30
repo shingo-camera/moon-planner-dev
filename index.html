@@ -2703,6 +2703,11 @@ function drawView(dist,tAz,va){
   const ctx=cv.getContext('2d');
   // 拡大表示時はrenderRatio>1（ZOOM_OVERSAMPLE=6）
   const renderRatio=parseFloat(cv.dataset.renderRatio||'1');
+  // カメラ視点オフセット：実際にカメラを振った状態として方位角・仰角に直接加算
+  // （以前はtranslateで画面位置だけずらしていたが、地平線・山等が画面端で切れる問題があったため
+  //   カメラの向き自体を変える方式に変更。これによりhanabiと同じ「実際に振った」見え方になる）
+  tAz = ((tAz + pvAzOfs) % 360 + 360) % 360;
+  va = va + pvAltOfs;
   const isZoom=renderRatio>1;
   const rs=renderRatio; // フォントサイズ乗数
 
@@ -2810,13 +2815,7 @@ function drawView(dist,tAz,va){
     return 'rgba(20,20,40,0.95)';
   }
 
-  // カメラ視点オフセット：以降の全描画をtranslateでずらす
-  // pvAzOfs>0 → カメラ右向き → 対象・地平線が左に移動
-  // pvAltOfs>0 → カメラ上向き → 対象・地平線が下に移動
-  const ofsDx = -gnoH(pvAzOfs);
-  const ofsDy =  gnoV(pvAltOfs);
-  ctx.save();
-  ctx.translate(ofsDx, ofsDy);
+  // カメラ視点オフセットはtAz/vaに直接反映済み（上記）のため、translateは不要
 
   const vaTop=va;
   // 塔根本の仰角（負の値 = 地平線より下、俯瞰時）
@@ -3091,7 +3090,7 @@ function drawView(dist,tAz,va){
     // frontAz: 建物辺の走る方向（度）
     const TW_FRONT_AZ = T[cur].frontAz || 23;
     const tw_viewDir = (tAz + 180 + 360) % 360;
-    const tw_relDeg  = ((tw_viewDir - TW_FRONT_AZ) + 360) % 360;
+    const tw_relDeg  = ((TW_FRONT_AZ - tw_viewDir) + 360) % 360;
     const tw_gAngle  = tw_relDeg * Math.PI / 180;
     const tw_sinA = Math.sin(tw_gAngle), tw_cosA = Math.cos(tw_gAngle);
 
@@ -3289,7 +3288,7 @@ function drawView(dist,tAz,va){
     // 値はすべてGoogle衛星画像から棟ラインを実測して算出。未定義時は岐阜城のデフォルト203°。
     const FRONT_AZ=T[cur].frontAz||203;
     const viewDir=(tAz+180+360)%360;
-    const relDeg=((viewDir-FRONT_AZ)+360)%360;
+    const relDeg=((FRONT_AZ-viewDir)+360)%360;
     const gAngle=relDeg*Math.PI/180;
     const gSinA=Math.sin(gAngle), gCosA=Math.cos(gAngle);
 
@@ -3774,7 +3773,7 @@ function drawView(dist,tAz,va){
   if(T[cur].silhouette==='tsutenkaku'){
     const TT_FRONT_AZ = T[cur].frontAz||16;
     const tt_viewDir = (tAz+180+360)%360;
-    const tt_relDeg  = ((tt_viewDir-TT_FRONT_AZ)+360)%360;
+    const tt_relDeg  = ((TT_FRONT_AZ-tt_viewDir)+360)%360;
     const tt_gAngle  = tt_relDeg*Math.PI/180;
     const tt_sinA=Math.sin(tt_gAngle), tt_cosA=Math.cos(tt_gAngle);
     const TT_TOTAL=thTrue, TT_H=T[cur].h;
@@ -3920,8 +3919,7 @@ function drawView(dist,tAz,va){
     ctx.font=`${Math.round(9*rs)}px 'Space Mono',monospace`;ctx.textAlign='center';
     ctx.fillText(label,cx,horizon-20);
   }
-  // 情報ラベル（オフセット外：canvas固定位置に表示）
-  ctx.restore();
+  // 情報ラベル（canvas固定位置に表示）
   const bodyName=sunsetMode?'太陽':'月';
   const fovLabel=`FOV ${fvH.toFixed(1)}°  ${bodyName} ${bodyAngDiam.toFixed(3)}°  ${T[cur].name}頂 ${angS(T[cur].h,dist).toFixed(1)}°  仰角 ${vaTop.toFixed(2)}°`;
   // canvas幅に収まるようフォントサイズを自動縮小（8px→最小6px）
@@ -7012,7 +7010,9 @@ async function downloadAnimationKmz(){
   const baseDate=new Date(`${ds}T${ts}:00+09:00`);
 
   const camElev=sElev;
-  const [distKm, targetAz]=bearingDistance(sLat,sLng,target.lat,target.lng);
+  const [distKm, targetAzRaw]=bearingDistance(sLat,sLng,target.lat,target.lng);
+  // 視点オフセット（8方向パッド）をカメラの実方位・実仰角に反映（プレビューと同じ「実際に振った」見え方）
+  const targetAz=((targetAzRaw+pvAzOfs)%360+360)%360;
   const targetTopElev=target.elev+target.h;
 
   // ── プレビューと同じalpha_cam計算でcamTiltを求める ──
@@ -7040,7 +7040,7 @@ async function downloadAnimationKmz(){
   const fvV_t1 = compMode==='land'
     ? 2*Math.atan(24/(2*focal))*180/Math.PI
     : 2*Math.atan(36/(2*focal))*180/Math.PI;
-  const alphaCam_t1 = calcAlphaCam(camElev, targetTopElev, target.elev, distKm, fvV_t1, CANVAS_H);
+  const alphaCam_t1 = calcAlphaCam(camElev, targetTopElev, target.elev, distKm, fvV_t1, CANVAS_H) + pvAltOfs;
   const camTilt = 90 + alphaCam_t1;
 
   // 193ステップ(±8分,5秒間隔)の天体位置を計算
