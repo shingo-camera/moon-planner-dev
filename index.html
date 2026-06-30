@@ -2707,7 +2707,8 @@ function drawView(dist,tAz,va){
   // （以前はtranslateで画面位置だけずらしていたが、地平線・山等が画面端で切れる問題があったため
   //   カメラの向き自体を変える方式に変更。これによりhanabiと同じ「実際に振った」見え方になる）
   tAz = ((tAz + pvAzOfs) % 360 + 360) % 360;
-  va = va + pvAltOfs;
+  // vaは被写体固有の仰角のまま保持（pvAltOfsはalpha_cam計算時にのみ加算し、
+  // sizeRatio/topRatio等の見かけサイズ計算に影響させない）
   const isZoom=renderRatio>1;
   const rs=renderRatio; // フォントサイズ乗数
 
@@ -2854,12 +2855,14 @@ function drawView(dist,tAz,va){
     : Math.min(0.45, Math.max(0.30, 0.45 - sizeRatio * 0.15));
   const targetTopY = H * (1 - topRatio);
 
-  // α_cam: 「頂点がtargetTopYに来るようにカメラを向けたときの光軸仰角」
+  // α_cam: 「頂点がtargetTopYに来るようにカメラを向けたときの光軸仰角」+ 視点オフセット
   // targetTopY = H/2 - f_px_V * tan(vaTop - α_cam)
   // → α_cam = vaTop*r - atan((H/2 - targetTopY) / f_px_V)
   // ※ vaTopが地平線以下(負)でもtargetTopYがH/2より上なら α_cam > vaTop となり
   //    カメラは頂上より上を向く。これは仕様通り（頂上が画面上部に来るよう自動調整）。
-  const alpha_cam = vaTop * r - Math.atan((H/2 - targetTopY) / f_px_V);
+  // pvAltOfsは被写体の見かけサイズ計算(sizeRatio/topRatio)には影響させず、
+  // カメラの実際の向きにのみ反映する
+  const alpha_cam = vaTop * r - Math.atan((H/2 - targetTopY) / f_px_V) + pvAltOfs * r;
 
   // 全仰角→Y座標変換（gnomonic、α_cam基準）
   const toY_cam = alt => H/2 - f_px_V * Math.tan(alt * r - alpha_cam);
